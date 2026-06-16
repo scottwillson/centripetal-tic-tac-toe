@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Centripetal Tic-Tac-Toe</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --panel: #ffffff;
+    --grid-line: #9ec5f0;          /* light blue graph-paper lines */
+    --cell: #ffffff;
+    --cell-hover: #eaf2fd;
+    --legal: #000000;
+    --legal-glow: rgba(0, 0, 0, 0.45);
+    --x: #000000;
+    --o: #000000;
+    --text: #000000;
+    --muted: #444444;
+    --win: #cfe3fb;                /* light blue win highlight */
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px 16px 48px;
+  }
+  h1 {
+    font-size: clamp(22px, 4vw, 34px);
+    margin: 0 0 4px;
+    letter-spacing: 0.5px;
+  }
+  .subtitle { color: var(--muted); font-size: 14px; margin-bottom: 18px; text-align: center; }
+  .status {
+    display: flex; align-items: center; gap: 12px;
+    background: var(--panel);
+    padding: 12px 22px;
+    border-radius: 999px;
+    font-size: 18px; font-weight: 600;
+    margin-bottom: 18px;
+    border: 1px solid var(--text);
+    min-height: 24px;
+  }
+  .turn-dot {
+    width: 18px; height: 18px; border-radius: 50%;
+    box-shadow: 0 0 12px currentColor;
+  }
+  .turn-X { color: var(--x); }
+  .turn-O { color: var(--o); }
+  .spinner {
+    width: 16px; height: 16px; border-radius: 50%;
+    border: 2px solid var(--muted); border-top-color: var(--text);
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .board {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 1px;
+    background: var(--grid-line);
+    padding: 1px;
+    border: 1px solid var(--grid-line);
+    border-radius: 2px;
+    width: min(92vw, 520px);
+    aspect-ratio: 1 / 1;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.12);
+  }
+  .board.thinking { pointer-events: none; opacity: 0.92; }
+  .cell {
+    background: var(--cell);
+    border: none;
+    border-radius: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: clamp(18px, 5vw, 34px);
+    font-weight: 800;
+    cursor: default;
+    transition: background 0.12s, transform 0.06s, box-shadow 0.15s;
+    user-select: none;
+    color: var(--text);
+    aspect-ratio: 1 / 1;
+  }
+  .cell.legal { cursor: pointer; }
+  /* hovering a legal square previews the piece you'd place, at 50% gray */
+  .cell.legal:hover::before {
+    content: var(--ghost, "");
+    color: rgba(0, 0, 0, 0.5);
+  }
+  .cell.X { color: var(--x); }
+  .cell.O { color: var(--o); }
+  .cell.last { box-shadow: inset 0 0 0 2px var(--muted); }
+  .cell.win {
+    background: var(--win) !important;
+    color: #000000 !important;
+    animation: pop 0.4s ease;
+  }
+  @keyframes pop { 0% { transform: scale(0.6); } 60% { transform: scale(1.12); } 100% { transform: scale(1); } }
+
+  .controls { margin-top: 22px; display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; align-items: center; }
+  button.btn, select.btn {
+    background: var(--panel);
+    color: var(--text);
+    border: 1px solid var(--text);
+    padding: 10px 18px;
+    border-radius: 8px;
+    font-size: 15px; font-weight: 600;
+    cursor: pointer;
+    transition: background 0.12s, transform 0.06s;
+  }
+  button.btn:hover, select.btn:hover { background: var(--cell-hover); }
+  button.btn:active { transform: translateY(1px); }
+  .legend { margin-top: 18px; color: var(--muted); font-size: 13px; max-width: 520px; text-align: center; line-height: 1.5; }
+  label.toggle { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-size: 14px; color: var(--text); }
+</style>
+</head>
+<body>
+  <h1>Centripetal Tic-Tac-Toe</h1>
+  <div class="subtitle">8&times;8 board &middot; get <b>4 in a row</b> (rows, columns, or diagonals) &middot; vs. computer</div>
+
+  <div class="status" id="status">
+    <span class="turn-dot turn-X" id="turnDot"></span>
+    <span id="statusText">X to move</span>
+  </div>
+
+  <div class="board" id="board"></div>
+
+  <div class="controls">
+    <select class="btn" id="modeSelect">
+      <option value="human-X">You play X (move first)</option>
+      <option value="human-O">You play O (computer first)</option>
+      <option value="human-human">Two players (no computer)</option>
+    </select>
+    <select class="btn" id="difficultySelect" title="Computer strength">
+      <option value="easy">Easy</option>
+      <option value="medium" selected>Medium</option>
+      <option value="hard">Hard</option>
+    </select>
+    <button class="btn" id="resetBtn">New Game</button>
+  </div>
+
+  <div class="legend">
+    <b>Placement rule:</b> a piece must touch the <b>edge</b> of the board, or connect to an edge by an <b>unbroken straight orthogonal line of pieces</b> &mdash; a gap-free row or column run from the border in to your cell (no diagonals). The board fills inward from the rim toward the center.
+  </div>
+
+<script>
+(function () {
+  const SIZE = 8;
+  const WIN_LEN = 4;
+  const WIN_SCORE = 1000000;
+
+  // Difficulty presets. depth = search depth cap, budget = ms/move,
+  // blunder = chance of playing a random (still-legal) move instead of the best one.
+  const DIFFICULTY = {
+    easy:   { depth: 2, budget: 120,  blunder: 0.35 },
+    medium: { depth: 4, budget: 500,  blunder: 0.0  },
+    hard:   { depth: 6, budget: 1200, blunder: 0.0  }
+  };
+  let settings = DIFFICULTY.medium;
+  const MAX_DEPTH = 6;       // ceiling used only for win-distance scoring
+
+  const boardEl = document.getElementById('board');
+  const statusText = document.getElementById('statusText');
+  const turnDot = document.getElementById('turnDot');
+  const resetBtn = document.getElementById('resetBtn');
+  const modeSelect = document.getElementById('modeSelect');
+  const difficultySelect = document.getElementById('difficultySelect');
+
+  let grid;          // 2D array: null | 'X' | 'O'
+  let current;       // 'X' | 'O'
+  let gameOver;
+  let cells = [];    // flat array of button elements
+  let aiPlayer;      // 'X' | 'O' | null  (which side the computer controls)
+  let lastMove = null;
+  let thinking = false;
+
+  // Anchoring is orthogonal only (up/down/left/right) — NOT diagonal.
+  const DIRS4 = [
+            [-1,0],
+    [ 0,-1],      [ 0,1],
+            [ 1,0]
+  ];
+  const LINE_DIRS = [[0,1],[1,0],[1,1],[1,-1]]; // horiz, vert, diag-down, diag-up
+
+  function inBounds(r, c) { return r >= 0 && r < SIZE && c >= 0 && c < SIZE; }
+  function isEdge(r, c) { return r === 0 || c === 0 || r === SIZE - 1 || c === SIZE - 1; }
+  function other(p) { return p === 'X' ? 'O' : 'X'; }
+
+  // ---- rules ----
+  // A cell is legal if it is empty AND it lies at the edge, OR in at least one
+  // orthogonal direction every cell from here out to the border is filled —
+  // i.e. an unbroken straight row/column run of pieces connects it to the edge.
+  function isLegalOn(g, r, c) {
+    if (g[r][c] !== null) return false;
+    if (isEdge(r, c)) return true;
+    for (const [dr, dc] of DIRS4) {
+      let nr = r + dr, nc = c + dc;
+      let solid = true;
+      while (inBounds(nr, nc)) {           // walk toward the border
+        if (g[nr][nc] === null) { solid = false; break; }
+        nr += dr; nc += dc;
+      }
+      if (solid) return true;              // ran off the board with no gaps -> reached edge
+    }
+    return false;
+  }
+  function isLegal(r, c) { return isLegalOn(grid, r, c); }
+
+  function legalMoves(g) {
+    const moves = [];
+    for (let r = 0; r < SIZE; r++)
+      for (let c = 0; c < SIZE; c++)
+        if (isLegalOn(g, r, c)) moves.push([r, c]);
+    return moves;
+  }
+
+  // Does placing player at (r,c) complete WIN_LEN in a row? (g already has the piece placed)
+  function winsAt(g, r, c, player) {
+    for (const [dr, dc] of LINE_DIRS) {
+      let count = 1;
+      let nr = r + dr, nc = c + dc;
+      while (inBounds(nr, nc) && g[nr][nc] === player) { count++; nr += dr; nc += dc; }
+      nr = r - dr; nc = c - dc;
+      while (inBounds(nr, nc) && g[nr][nc] === player) { count++; nr -= dr; nc -= dc; }
+      if (count >= WIN_LEN) return true;
+    }
+    return false;
+  }
+
+  // Return the winning run cells (for highlighting), or null
+  function winningCells(g, r, c, player) {
+    for (const [dr, dc] of LINE_DIRS) {
+      const line = [[r, c]];
+      let nr = r + dr, nc = c + dc;
+      while (inBounds(nr, nc) && g[nr][nc] === player) { line.push([nr, nc]); nr += dr; nc += dc; }
+      nr = r - dr; nc = c - dc;
+      while (inBounds(nr, nc) && g[nr][nc] === player) { line.unshift([nr, nc]); nr -= dr; nc -= dc; }
+      if (line.length >= WIN_LEN) return line;
+    }
+    return null;
+  }
+
+  // ---- evaluation (from `player` perspective) ----
+  // Scan every length-4 window; reward windows that hold only `player` pieces, penalize windows only opponent's.
+  // Weight a clean window (no opponent pieces) by how many of our pieces it holds.
+  // Steeply rising so the AI favours building threes (one step from a winning
+  // fork) and stacking overlapping threats, not just isolated pairs.
+  const W = [0, 1, 16, 400, WIN_SCORE];
+  function evaluate(g, player) {
+    const opp = other(player);
+    let score = 0;
+    for (let r = 0; r < SIZE; r++) {
+      for (let c = 0; c < SIZE; c++) {
+        for (const [dr, dc] of LINE_DIRS) {
+          const er = r + dr * (WIN_LEN - 1), ec = c + dc * (WIN_LEN - 1);
+          if (!inBounds(er, ec)) continue;
+          let cp = 0, co = 0;
+          for (let k = 0; k < WIN_LEN; k++) {
+            const v = g[r + dr * k][c + dc * k];
+            if (v === player) cp++; else if (v === opp) co++;
+          }
+          if (cp > 0 && co === 0) score += W[cp];
+          else if (co > 0 && cp === 0) score -= W[co];
+        }
+      }
+    }
+    return score;
+  }
+
+  // ---- search (negamax + alpha-beta), from side-to-move perspective ----
+  function negamax(g, depth, alpha, beta, toMove, deadline) {
+    const moves = legalMoves(g);
+    if (moves.length === 0) return 0;          // no legal moves -> draw
+    if (depth === 0) return evaluate(g, toMove);
+    if (performance.now() > deadline) return evaluate(g, toMove);
+
+    // move ordering: prefer central cells (centripetal -> central cells build winning lines)
+    const mid = (SIZE - 1) / 2;
+    moves.sort((a, b) =>
+      (Math.abs(a[0]-mid)+Math.abs(a[1]-mid)) - (Math.abs(b[0]-mid)+Math.abs(b[1]-mid)));
+
+    let best = -Infinity;
+    const opp = other(toMove);
+    for (const [r, c] of moves) {
+      g[r][c] = toMove;
+      let s;
+      if (winsAt(g, r, c, toMove)) {
+        s = WIN_SCORE - (MAX_DEPTH - depth);     // prefer faster wins
+      } else {
+        s = -negamax(g, depth - 1, -beta, -alpha, opp, deadline);
+      }
+      g[r][c] = null;
+      if (s > best) best = s;
+      if (best > alpha) alpha = best;
+      if (alpha >= beta) break;
+    }
+    return best;
+  }
+
+  // All empty, legal cells where `player` would immediately complete 4-in-a-row.
+  // (Two or more such cells = a double threat / "open three" = unstoppable next move.)
+  function winningMoves(g, player) {
+    const res = [];
+    for (const [r, c] of legalMoves(g)) {
+      g[r][c] = player;
+      if (winsAt(g, r, c, player)) res.push([r, c]);
+      g[r][c] = null;
+    }
+    return res;
+  }
+
+  // Would playing `m` for `player` let the opponent reach a guaranteed win —
+  // i.e. an immediate winning reply, or a reply that creates a double threat
+  // (an open three with two winning completions)? If so, `m` is unsafe.
+  function allowsForcedLoss(g, m, player, opp) {
+    g[m[0]][m[1]] = player;
+    let bad = false;
+    // Did our own move hand the opponent an immediate winning cell?
+    if (winningMoves(g, opp).length >= 1) {
+      bad = true;
+    } else {
+      for (const [or_, oc] of legalMoves(g)) {
+        g[or_][oc] = opp;
+        // opponent now has 2+ winning cells -> unblockable open three
+        const dbl = winningMoves(g, opp).length >= 2;
+        g[or_][oc] = null;
+        if (dbl) { bad = true; break; }
+      }
+    }
+    g[m[0]][m[1]] = null;
+    return bad;
+  }
+
+  function chooseMove(g, player) {
+    let moves = legalMoves(g);
+    if (moves.length === 0) return null;
+    const opp = other(player);
+
+    // 1. Win immediately if we can — always, on every difficulty.
+    const myWins = winningMoves(g, player);
+    if (myWins.length) return myWins[0];
+
+    // 2. Block the opponent's immediate threat(s). A threat is a cell that
+    //    completes their 4; we can only neutralise it by occupying it.
+    const oppWins = winningMoves(g, opp);
+    if (oppWins.length === 1) return oppWins[0];      // forced block
+    if (oppWins.length >= 2) moves = oppWins;          // already lost; pick best block
+
+    if (oppWins.length === 0) {
+      // 2.5 Offensive fork: a move giving US two winning cells at once (our own
+      //     open three) while leaving the opponent no immediate reply. The
+      //     opponent can block only one — so this wins next turn. Take it now.
+      for (const m of moves) {
+        g[m[0]][m[1]] = player;
+        const fork = winningMoves(g, player).length >= 2 && winningMoves(g, opp).length === 0;
+        g[m[0]][m[1]] = null;
+        if (fork) return m;
+      }
+
+      // 3. Hard rule: never allow a guaranteed loss (open three / double threat).
+      //    Keep only moves that don't let the opponent force a win. Enforced on
+      //    EVERY difficulty — if any safe move exists, the AI must choose one.
+      const safe = moves.filter(m => !allowsForcedLoss(g, m, player, opp));
+      if (safe.length) moves = safe;                  // else position is lost anyway
+    }
+
+    // 4. On easier levels, play a careless move — but only among the SAFE moves,
+    //    so even Easy never walks into a forced loss.
+    if (settings.blunder > 0 && Math.random() < settings.blunder) {
+      return moves[(Math.random() * moves.length) | 0];
+    }
+
+    const mid = (SIZE - 1) / 2;
+    moves.sort((a, b) =>
+      (Math.abs(a[0]-mid)+Math.abs(a[1]-mid)) - (Math.abs(b[0]-mid)+Math.abs(b[1]-mid)));
+
+    const deadline = performance.now() + settings.budget;
+    const maxDepth = settings.depth;
+    let bestMove = moves[0];
+
+    // iterative deepening
+    for (let depth = 2; depth <= maxDepth; depth++) {
+      let bestScore = -Infinity, alpha = -Infinity;
+      let localBest = bestMove;
+      let completed = true;
+      for (const [r, c] of moves) {
+        g[r][c] = player;
+        let s;
+        if (winsAt(g, r, c, player)) s = WIN_SCORE;
+        else s = -negamax(g, depth - 1, -Infinity, -alpha, opp, deadline);
+        g[r][c] = null;
+        if (s > bestScore) { bestScore = s; localBest = [r, c]; }
+        if (s > alpha) alpha = s;
+        if (performance.now() > deadline) { completed = false; break; }
+      }
+      if (completed) bestMove = localBest;
+      if (!completed || bestScore >= WIN_SCORE - MAX_DEPTH) { bestMove = localBest; break; }
+    }
+    return bestMove;
+  }
+
+  // ---- game flow ----
+  function applyMove(r, c, player) {
+    grid[r][c] = player;
+    lastMove = [r, c];
+
+    const win = winningCells(grid, r, c, player);
+    if (win) {
+      gameOver = true;
+      render();
+      for (const [wr, wc] of win) cells[wr * SIZE + wc].classList.add('win');
+      updateStatus(player + ' wins!', player);
+      return;
+    }
+
+    current = other(player);
+
+    if (legalMoves(grid).length === 0) {
+      gameOver = true;
+      updateStatus('Draw — no legal moves left.', 'none');
+      render();
+      return;
+    }
+
+    render();
+    // show whose turn it is; maybeAiMove() replaces this with the spinner
+    // only when it is actually the computer's move.
+    const label = (current === aiPlayer) ? 'Computer' : (aiPlayer ? 'Your move (' + current + ')' : current + ' to move');
+    updateStatus(label, current);
+    maybeAiMove();
+  }
+
+  function maybeAiMove() {
+    if (gameOver || current !== aiPlayer) return;
+    thinking = true;
+    boardEl.classList.add('thinking');
+    updateStatus('Computer thinking…', aiPlayer, true);
+    // defer so the UI can paint the spinner before the search blocks the thread
+    setTimeout(() => {
+      const move = chooseMove(grid, aiPlayer);
+      thinking = false;
+      boardEl.classList.remove('thinking');
+      if (move) applyMove(move[0], move[1], aiPlayer);
+    }, 30);
+  }
+
+  function handleClick(r, c) {
+    if (gameOver || thinking || !isLegal(r, c)) return;
+    if (current === aiPlayer) return;
+    applyMove(r, c, current);
+  }
+
+  // ---- rendering ----
+  function render() {
+    // the gray hover-preview glyph reflects whose turn it is
+    boardEl.style.setProperty('--ghost', JSON.stringify(current));
+    for (let r = 0; r < SIZE; r++) {
+      for (let c = 0; c < SIZE; c++) {
+        const el = cells[r * SIZE + c];
+        const v = grid[r][c];
+        el.className = 'cell';
+        el.textContent = v || '';
+        if (v) {
+          el.classList.add(v);
+          if (lastMove && lastMove[0] === r && lastMove[1] === c) el.classList.add('last');
+        } else if (!gameOver && !thinking && current !== aiPlayer && isLegal(r, c)) {
+          el.classList.add('legal');
+        }
+      }
+    }
+  }
+
+  function updateStatus(text, who, spin) {
+    statusText.textContent = text;
+    if (spin) {
+      turnDot.className = 'spinner';
+    } else {
+      turnDot.className = 'turn-dot turn-' + (who === 'none' ? 'X' : who);
+      turnDot.style.visibility = who === 'none' ? 'hidden' : 'visible';
+    }
+  }
+
+  function build() {
+    boardEl.innerHTML = '';
+    cells = [];
+    for (let r = 0; r < SIZE; r++) {
+      for (let c = 0; c < SIZE; c++) {
+        const el = document.createElement('button');
+        el.className = 'cell';
+        el.addEventListener('click', () => handleClick(r, c));
+        boardEl.appendChild(el);
+        cells.push(el);
+      }
+    }
+  }
+
+  function reset() {
+    grid = Array.from({ length: SIZE }, () => Array(SIZE).fill(null));
+    current = 'X';
+    gameOver = false;
+    thinking = false;
+    lastMove = null;
+    boardEl.classList.remove('thinking');
+
+    settings = DIFFICULTY[difficultySelect.value] || DIFFICULTY.medium;
+
+    const mode = modeSelect.value;
+    if (mode === 'human-X') aiPlayer = 'O';
+    else if (mode === 'human-O') aiPlayer = 'X';
+    else aiPlayer = null;
+
+    updateStatus('X to move', 'X');
+    render();
+    maybeAiMove();   // computer opens if it plays X
+  }
+
+  resetBtn.addEventListener('click', reset);
+  modeSelect.addEventListener('change', reset);
+  difficultySelect.addEventListener('change', () => {
+    // apply immediately; restart only if mid-game so it can't change a finished board's result
+    settings = DIFFICULTY[difficultySelect.value] || DIFFICULTY.medium;
+  });
+
+  build();
+  reset();
+})();
+</script>
+</body>
+</html>
